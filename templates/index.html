@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP-SAKTI Sahayak</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand">🌿 <span>IP-SAKTI Sahayak</span></div>
+      <div class="tagline" id="tagline">Ayurveda IP & Regulatory Guidance</div>
+    </header>
+
+    <section class="hero">
+      <div class="pill">RAG • SOURCE-GROUNDED • MULTIMODAL • MULTILINGUAL</div>
+      <h1 id="heroTitle">Ask. Understand. Verify.</h1>
+      <p id="heroText">Ask an Ayurveda-related IP or regulatory question using text, your voice, or an image/document.</p>
+
+      <div class="controls">
+        <select id="language" onchange="changeLanguage()" aria-label="Language">
+          <option>English</option>
+          <option>Hindi</option>
+          <option>Marathi</option>
+        </select>
+      </div>
+
+      <div class="askbox">
+        <textarea id="query" placeholder="Example: Can I patent my Ayurvedic formulation?"></textarea>
+        <div class="ask-actions">
+          <button class="primary" id="askButton" onclick="askQuestion()">Ask IP-SAKTI</button>
+          <button class="secondary" id="voiceButton" onclick="toggleVoice()">🎙️ Speak</button>
+        </div>
+      </div>
+
+      <div class="tool-row">
+        <label class="upload-btn" for="attachment">📎 Upload image / file</label>
+        <input id="attachment" type="file" hidden accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/markdown,.docx">
+        <button class="secondary" id="clearFile" onclick="clearAttachment()" disabled>✕ Remove</button>
+        <button class="secondary" id="readButton" onclick="readLastAnswer()" disabled>🔊 Read answer</button>
+      </div>
+      <div id="attachmentInfo" class="attachment-info hidden"></div>
+      <div class="hint">Images: PNG/JPG/WEBP · Documents: PDF/TXT/MD/DOCX · Max 8 MB</div>
+
+      <div id="loading" class="loading hidden"><span class="spinner"></span> Searching sources and preparing your answer...</div>
+      <section id="result" class="result hidden"></section>
+    </section>
+
+    <footer><strong id="footerStrong">Prototype</strong> · <span id="footerText">Information only, not legal advice.</span></footer>
+  </main>
+
+<script>
+const UI = {
+  English: {
+    tagline: "Ayurveda IP & Regulatory Guidance",
+    title: "Ask. Understand. Verify.",
+    text: "Ask an Ayurveda-related IP or regulatory question using text, your voice, or an image/document.",
+    placeholder: "Example: Can I patent my Ayurvedic formulation?",
+    button: "Ask IP-SAKTI",
+    speak: "🎙️ Speak",
+    stop: "⏹ Stop",
+    loading: "Searching sources and preparing your answer...",
+    answer: "Answer",
+    sources: "Official sources used",
+    next: "IP-SAKTI understood",
+    footerStrong: "Prototype",
+    footer: "Information only, not legal advice."
+  },
+  Hindi: {
+    tagline: "आयुर्वेद IP और नियामक मार्गदर्शन",
+    title: "पूछें। समझें। सत्यापित करें।",
+    text: "टेक्स्ट, आवाज़ या image/document के साथ आयुर्वेद से जुड़ा IP या regulatory प्रश्न पूछें।",
+    placeholder: "उदाहरण: क्या मैं अपने आयुर्वेदिक फॉर्म्युलेशन का पेटेंट करा सकता हूँ?",
+    button: "IP-SAKTI से पूछें",
+    speak: "🎙️ बोलें",
+    stop: "⏹ रोकें",
+    loading: "स्रोत खोजकर उत्तर तैयार किया जा रहा है...",
+    answer: "उत्तर",
+    sources: "उपयोग किए गए आधिकारिक स्रोत",
+    next: "IP-SAKTI ने ऐसे समझा",
+    footerStrong: "प्रोटोटाइप",
+    footer: "केवल जानकारी, कानूनी सलाह नहीं।"
+  },
+  Marathi: {
+    tagline: "आयुर्वेद IP आणि नियामक मार्गदर्शन",
+    title: "विचारा. समजून घ्या. पडताळा.",
+    text: "टेक्स्ट, आवाज किंवा image/document वापरून आयुर्वेदाशी संबंधित IP किंवा regulatory प्रश्न विचारा.",
+    placeholder: "उदाहरण: माझ्या आयुर्वेदिक फॉर्म्युलेशनचे पेटंट मिळू शकते का?",
+    button: "IP-SAKTI ला विचारा",
+    speak: "🎙️ बोला",
+    stop: "⏹ थांबवा",
+    loading: "स्रोत शोधून उत्तर तयार केले जात आहे...",
+    answer: "उत्तर",
+    sources: "वापरलेले अधिकृत स्रोत",
+    next: "IP-SAKTI ने असे समजले",
+    footerStrong: "प्रोटोटाइप",
+    footer: "केवळ माहिती, कायदेशीर सल्ला नाही."
+  }
+};
+
+let selectedFile = null;
+let recognition = null;
+let lastAnswer = "";
+
+function changeLanguage() {
+  const lang = document.getElementById("language").value;
+  const u = UI[lang];
+  document.getElementById("tagline").textContent = u.tagline;
+  document.getElementById("heroTitle").textContent = u.title;
+  document.getElementById("heroText").textContent = u.text;
+  document.getElementById("query").placeholder = u.placeholder;
+  document.getElementById("askButton").textContent = u.button;
+  document.getElementById("voiceButton").textContent = u.speak;
+  document.getElementById("loading").innerHTML = `<span class="spinner"></span> ${u.loading}`;
+  document.getElementById("footerStrong").textContent = u.footerStrong;
+  document.getElementById("footerText").textContent = u.footer;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+}
+
+function showAttachment(file) {
+  selectedFile = file;
+  const info = document.getElementById("attachmentInfo");
+  if (!file) {
+    info.classList.add("hidden");
+    info.textContent = "";
+    document.getElementById("clearFile").disabled = true;
+    return;
+  }
+  info.classList.remove("hidden");
+  info.innerHTML = `📄 <strong>${escapeHtml(file.name)}</strong> · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+  document.getElementById("clearFile").disabled = false;
+}
+
+function clearAttachment() {
+  selectedFile = null;
+  document.getElementById("attachment").value = "";
+  showAttachment(null);
+}
+
+document.getElementById("attachment").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) {
+    alert("Please choose a file smaller than 8 MB.");
+    e.target.value = "";
+    return;
+  }
+  showAttachment(file);
+});
+
+function getSpeechLocale(language) {
+  return {English: "en-IN", Hindi: "hi-IN", Marathi: "mr-IN"}[language] || "en-IN";
+}
+
+function toggleVoice() {
+  const language = document.getElementById("language").value;
+  const btn = document.getElementById("voiceButton");
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    alert("Voice input is not supported by this browser. Try Chrome or Edge.");
+    return;
+  }
+  if (recognition) {
+    recognition.stop();
+    recognition = null;
+    btn.textContent = UI[language].speak;
+    return;
+  }
+  recognition = new Recognition();
+  recognition.lang = getSpeechLocale(language);
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  recognition.onstart = () => btn.textContent = UI[language].stop;
+  recognition.onresult = event => {
+    let text = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) text += event.results[i][0].transcript;
+    document.getElementById("query").value = text.trim();
+  };
+  recognition.onerror = () => { btn.textContent = UI[language].speak; recognition = null; };
+  recognition.onend = () => { btn.textContent = UI[language].speak; recognition = null; };
+  recognition.start();
+}
+
+function readLastAnswer() {
+  if (!lastAnswer || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(lastAnswer);
+  utterance.lang = getSpeechLocale(document.getElementById("language").value);
+  utterance.rate = 0.95;
+  window.speechSynthesis.speak(utterance);
+}
+
+async function askQuestion() {
+  const queryEl = document.getElementById("query");
+  const button = document.getElementById("askButton");
+  const query = queryEl.value.trim();
+  const language = document.getElementById("language").value;
+  const result = document.getElementById("result");
+  const loading = document.getElementById("loading");
+  const u = UI[language];
+
+  if (!query && !selectedFile) {
+    queryEl.focus();
+    return;
+  }
+
+  result.classList.add("hidden");
+  loading.classList.remove("hidden");
+  button.disabled = true;
+
+  try {
+    const form = new FormData();
+    form.append("query", query);
+    form.append("language", language);
+    if (selectedFile) form.append("attachment", selectedFile);
+
+    const res = await fetch("/ask", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Something went wrong.");
+
+    lastAnswer = data.answer || "";
+    document.getElementById("readButton").disabled = !lastAnswer;
+
+    const sources = (data.sources || []).map(s => `
+      <li>
+        <strong>${escapeHtml(s.title)}</strong><br>
+        <span>${escapeHtml(s.source)}</span>
+        ${s.url ? `<br><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">Open official source ↗</a>` : ""}
+      </li>`).join("");
+
+    const intents = (data.intents || []).map(escapeHtml).join(" · ");
+    const attachment = data.attachment ? `<div class="attachment-badge">📎 ${escapeHtml(data.attachment.filename)} · ${escapeHtml(data.attachment.kind)}</div>` : "";
+    result.innerHTML = `
+      <div class="answer-head"><h2>${u.answer}</h2><span class="mode">${escapeHtml(data.mode || "RAG")}</span></div>
+      ${attachment}
+      <p class="answer">${escapeHtml(data.answer).replace(/\n/g, "<br>")}</p>
+      <div class="understanding"><strong>${u.next}</strong><span>${intents || "general"}</span></div>
+      <h3>${u.sources}</h3>
+      <ul>${sources}</ul>
+      <div class="disclaimer">⚠️ ${escapeHtml(data.disclaimer)}</div>
+    `;
+    result.classList.remove("hidden");
+  } catch (e) {
+    result.innerHTML = `<p>${escapeHtml(e.message || "Could not connect to the server.")}</p>`;
+    result.classList.remove("hidden");
+  } finally {
+    loading.classList.add("hidden");
+    button.disabled = false;
+  }
+}
+
+document.getElementById("query").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") askQuestion();
+});
+changeLanguage();
+</script>
+</body>
+</html>
